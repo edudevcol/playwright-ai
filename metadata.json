@@ -1,0 +1,5 @@
+{
+  "name": "Playwright AI Generator",
+  "description": "An intelligent agent that converts natural language instructions into robust Playwright automation code by simulating DOM analysis and selector optimization.",
+  "requestFramePermissions": []
+}
