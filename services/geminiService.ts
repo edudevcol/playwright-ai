@@ -2,18 +2,7 @@ import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
 import { AutomationStep, ActionType, GeneratedFiles } from "../types";
 
 // Safe access to process.env for browser environments
-const getApiKey = () => {
-  try {
-    if (typeof process !== 'undefined' && process.env) {
-      return process.env.API_KEY || '';
-    }
-  } catch (e) {
-    // Ignore reference errors
-  }
-  return '';
-};
-
-const apiKey = getApiKey();
+const apiKey = process.env.API_KEY || '';
 
 const ai = new GoogleGenAI({ apiKey });
 
@@ -58,26 +47,26 @@ const generateId = () => {
 };
 
 interface InstructionResult {
-    steps: AutomationStep[];
-    responseMessage: string;
-    newUrl: string;
+  steps: AutomationStep[];
+  responseMessage: string;
+  newUrl: string;
 }
 
 // --- HEURISTICS ---
 const tryLocalHeuristics = (instruction: string, currentUrl: string): InstructionResult | null => {
   const lower = instruction.toLowerCase().trim();
-  
+
   // Regex for explicit simple navigation
   const navRegex = /^(?:navigate\s+to|go\s+to|open|visit|visitar|navegar\s+a|ir\s+a)\s+(https?:\/\/[^\s]+|[a-zA-Z0-9.-]+\.[a-z]{2,})(\s*)?$/i;
-  
+
   const match = lower.match(navRegex);
-  
+
   if (match && match[1]) {
     let url = match[1];
     if (!url.startsWith('http')) {
       url = 'https://' + url;
     }
-    
+
     // Heuristic POM context guessing
     let pageContext = "BasePage";
     if (url.includes("saucedemo")) pageContext = "LoginPage";
@@ -86,16 +75,16 @@ const tryLocalHeuristics = (instruction: string, currentUrl: string): Instructio
     else if (url.includes("inventory") || url.includes("product")) pageContext = "InventoryPage";
 
     const step: AutomationStep = {
-        id: generateId(),
-        order: 0,
-        description: instruction,
-        actionType: ActionType.NAVIGATE,
-        targetElement: "Browser Window",
-        simulatedSelector: "/",
-        value: url,
-        url: url,
-        reasoning: "Fast-tracked: Detected direct navigation.",
-        pageContext: pageContext
+      id: generateId(),
+      order: 0,
+      description: instruction,
+      actionType: ActionType.NAVIGATE,
+      targetElement: "Browser Window",
+      simulatedSelector: "/",
+      value: url,
+      url: url,
+      reasoning: "Fast-tracked: Detected direct navigation.",
+      pageContext: pageContext
     };
 
     return {
@@ -104,16 +93,16 @@ const tryLocalHeuristics = (instruction: string, currentUrl: string): Instructio
       responseMessage: `Navigating to ${url} (${pageContext})`
     };
   }
-  
+
   return null;
 };
 
 export const processUserInstruction = async (
-  instruction: string, 
-  currentUrl: string, 
+  instruction: string,
+  currentUrl: string,
   previousSteps: AutomationStep[]
 ): Promise<InstructionResult> => {
-  
+
   const localResult = tryLocalHeuristics(instruction, currentUrl);
   if (localResult) {
     localResult.steps[0].order = previousSteps.length + 1;
@@ -125,9 +114,9 @@ export const processUserInstruction = async (
   }
 
   const model = "gemini-2.5-flash";
-  
+
   // Context for the AI to understand the flow
-  const contextSummary = previousSteps.map(s => 
+  const contextSummary = previousSteps.map(s =>
     `[${s.pageContext}] ${s.actionType} -> ${s.targetElement}`
   ).join('\n');
 
@@ -172,7 +161,7 @@ export const processUserInstruction = async (
           model,
           contents: prompt,
           config: {
-            responseMimeType: "application/json", 
+            responseMimeType: "application/json",
             temperature: 0.1 // Lower temperature for more deterministic multi-step logic
           }
         }),
@@ -192,18 +181,18 @@ export const processUserInstruction = async (
 
       // Validate data structure
       if (!data.steps || !Array.isArray(data.steps)) {
-          // Fallback if AI returns single object instead of array
-          if (data.actionType) {
-              data.steps = [data]; 
-          } else {
-              throw new Error("Invalid JSON structure");
-          }
+        // Fallback if AI returns single object instead of array
+        if (data.actionType) {
+          data.steps = [data];
+        } else {
+          throw new Error("Invalid JSON structure");
+        }
       }
 
       let nextUrl = data.newUrl || currentUrl;
       // Basic URL cleanup
       if (nextUrl && nextUrl !== 'about:blank' && !nextUrl.startsWith('http') && nextUrl.includes('.')) {
-          nextUrl = `https://${nextUrl}`;
+        nextUrl = `https://${nextUrl}`;
       }
 
       // Map response to AutomationStep objects
@@ -239,7 +228,7 @@ export const processUserInstruction = async (
 export const generateCode = async (steps: AutomationStep[]): Promise<GeneratedFiles> => {
   if (!apiKey) throw new Error("API Key is missing");
   const model = "gemini-2.5-flash";
-  
+
   // Minify steps for prompt
   const simpleSteps = steps.map(s => ({
     page: s.pageContext,
@@ -276,18 +265,18 @@ export const generateCode = async (steps: AutomationStep[]): Promise<GeneratedFi
   `;
 
   try {
-    const response = await ai.models.generateContent({ 
-        model, 
-        contents: prompt,
-        config: { responseMimeType: "application/json" }
+    const response = await ai.models.generateContent({
+      model,
+      contents: prompt,
+      config: { responseMimeType: "application/json" }
     });
-    
+
     const cleanedText = cleanJson(response.text || "{}");
     return JSON.parse(cleanedText);
   } catch (e) {
     console.error("Code Gen Error", e);
     return {
-        "error.log": "Failed to generate code. Please try again."
+      "error.log": "Failed to generate code. Please try again."
     };
   }
 };
